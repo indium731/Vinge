@@ -359,7 +359,12 @@ void editorOpen(char *filename) {
 	E.filename = strdup(filename);
 
 	char fullpath[512];
-	snprintf(fullpath, sizeof(fullpath), "files/%s", E.filename);
+	if (strchr(E.filename, '/')) {
+
+		snprintf(fullpath, sizeof(fullpath), "%s", E.filename);
+	} else {
+		snprintf(fullpath, sizeof(fullpath), "files/%s", E.filename);
+	}
 	FILE *fp = fopen(fullpath, "r");
 	if (!fp) die("fopen");
 	char *line = NULL;
@@ -693,10 +698,16 @@ void insertModeHandler(int c) {
 void normalModeHandler(int c) {
 	switch (c) {
 		case 'h':
+			editorMoveCursor(ARROW_LEFT);
+			break;
 		case 'j':
+			editorMoveCursor(ARROW_DOWN);
+			break;
 		case 'k':
+			editorMoveCursor(ARROW_UP);
+			break;
 		case 'l':
-			editorMoveCursor(c);
+			editorMoveCursor(ARROW_RIGHT);
 			break;
 		case 'i':
 		case 'a':
