@@ -358,7 +358,9 @@ void editorOpen(char *filename) {
 	free(E.filename);
 	E.filename = strdup(filename);
 
-	FILE *fp = fopen(filename, "r");
+	char fullpath[512];
+	snprintf(fullpath, sizeof(fullpath), "files/%s", E.filename);
+	FILE *fp = fopen(fullpath, "r");
 	if (!fp) die("fopen");
 	char *line = NULL;
 	size_t linecap = 0;
@@ -386,7 +388,9 @@ void editorSave() {
 	int len;
 	char *buf = editorRowsToString(&len);
 
-	int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+	char fullpath[512];
+	snprintf(fullpath, sizeof(fullpath), "files/%s", E.filename);
+	int fd = open(fullpath, O_RDWR | O_CREAT, 0644);
 	if (fd != -1) {
 		if (ftruncate(fd, len) != -1) {
 			if (write(fd, buf, len) == len) {
