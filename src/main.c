@@ -4,6 +4,7 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include <stdbool.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -20,7 +21,6 @@
 /*** defines ***/
 
 #define VINGE_TAB_STOP 8
-#define VINGE_QUIT_TIMES 3
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 
@@ -69,6 +69,7 @@ struct editorConfig {
 	time_t statusmsg_time;
 	struct termios orig_termios;
 	enum editorMode mode;
+	char *motion;
 };
 
 struct editorConfig E;
@@ -80,7 +81,8 @@ void editorRefreshScreen();
 char *editorPrompt(char *prompt);
 void normalModeHandler(int c);
 void insertModeHandler(int c);
-
+bool isSeparator(int c);
+void editorMoveCursor(int key);
 /*** terminal ***/
 
 void die(const char *s) {
@@ -332,6 +334,43 @@ void editorDelChar() {
 		E.cy--;
 	}
 }
+
+/*** word operations ***/
+
+int lengthToNextWord(){
+	bool wordFound = false;
+	int counter = 0;
+	while (true){
+		counter++;
+		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && !wordFound) wordFound = true;
+		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && wordFound) break;
+		
+	}
+	return counter;
+}
+
+int lengthToPrevWord(){
+	bool wordFound = false;
+	int counter = 0;
+	while (true){
+		counter--;
+		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && !wordFound) wordFound = true;
+		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && wordFound) break;
+		
+	}
+	return abs(counter);
+}
+
+bool isSeparator(int c) {
+	if (strchr(" \t\n.,;:()[]{}!?-<>\"'", c) != NULL) {
+		return false;
+	}
+	return true;
+}
+
+/*** motions ***/
+
+
 
 /*** file i/o ***/
 
@@ -710,8 +749,11 @@ void normalModeHandler(int c) {
 			editorMoveCursor(ARROW_RIGHT);
 			break;
 		case 'i':
+			E.mode = MODE_INSERT;
+			break;
 		case 'a':
 			E.mode = MODE_INSERT;
+			editorMoveCursor(ARROW_RIGHT);
 			break;
 		
 	}
