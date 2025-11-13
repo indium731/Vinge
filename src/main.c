@@ -4,6 +4,7 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <errno.h>
@@ -47,6 +48,13 @@ enum editorMode {
 
 /*** data ***/
 
+typedef struct {
+	int countBefore;
+	int operator;
+	int countAfter;
+	int motion;
+} motion;
+
 typedef struct erow {
 	int size;
 	int rsize;
@@ -69,7 +77,7 @@ struct editorConfig {
 	time_t statusmsg_time;
 	struct termios orig_termios;
 	enum editorMode mode;
-	char *motion;
+	motion motion;
 };
 
 struct editorConfig E;
@@ -83,6 +91,10 @@ void normalModeHandler(int c);
 void insertModeHandler(int c);
 bool isSeparator(int c);
 void editorMoveCursor(int key);
+void motionPerform();
+void motionClear();
+
+
 /*** terminal ***/
 
 void die(const char *s) {
@@ -353,23 +365,134 @@ int lengthToPrevWord(){
 	bool wordFound = false;
 	int counter = 0;
 	while (true){
-		counter--;
-		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && !wordFound) wordFound = true;
-		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && wordFound) break;
+		counter++;
+		if (isSeparator(E.row[E.cy].chars[E.cx - counter]) && !wordFound) wordFound = true;
+		if (isSeparator(E.row[E.cy].chars[E.cx - counter]) && wordFound) break;
 		
 	}
-	return abs(counter);
+	return counter;
 }
 
 bool isSeparator(int c) {
 	if (strchr(" \t\n.,;:()[]{}!?-<>\"'", c) != NULL) {
-		return false;
+		return true;
 	}
-	return true;
+	return false;
 }
 
-/*** motions ***/
+/*** motions // operations ***/
 
+bool isMotion(int c) {
+	if (strchr("hjklwxb", c) != NULL) {
+		return true;
+	}
+	return false;
+}
+
+bool isOperator(int c) {
+	if (strchr("d", c) != NULL) {
+		return true;
+	}
+	return false;
+}
+
+void motionAppend(int c) {
+	if (isdigit(c)) {
+		if (E.motion.operator != 0) {
+			E.motion.countBefore *= 10;
+			E.motion.countBefore += c;
+		}
+		if (E.motion.operator == 0) {
+			E.motion.countAfter *= 10;
+			E.motion.countAfter += c;
+		}
+	}
+
+	if (isOperator(c))  {
+		E.motion.operator = c;
+	}
+	
+	if (isMotion(c)) {
+		E.motion.motion = c;
+		motionPerform();
+	}
+}
+
+void motionMoveCursor(int direction, int count) {
+	for (int i = 0; i<count; i++) {
+		editorMoveCursor(direction);
+	}
+}
+
+void motionX(int count) {
+	for (int i = 0; i<count; i++) {
+		editorMoveCursor(ARROW_RIGHT);
+		editorDelChar();
+	}
+}
+
+void motionW(int count) {
+	int len;
+	for (int i = 0; i<count; i++) {
+		len = lengthToNextWord();
+		for (int i = 0; i<len; i++) {
+			editorMoveCursor(ARROW_RIGHT);
+		}
+	}
+}
+
+
+void motionB(int count) {
+	int len;
+	for (int i = 0; i<count; i++) {
+		len = lengthToPrevWord();
+		for (int i = 0; i<len; i++) {
+			editorMoveCursor(ARROW_LEFT);
+		}
+	}
+}
+
+
+
+
+
+
+void motionPerform() {
+	int performCount = E.motion.countBefore * E.motion.countAfter;
+	
+	switch (E.motion.motion) {
+		case 'h':
+			motionMoveCursor(ARROW_LEFT, performCount);
+			break;
+		case 'j':
+			motionMoveCursor(ARROW_DOWN, performCount);
+			break;
+		case 'k':
+			motionMoveCursor(ARROW_UP, performCount);
+			break;
+		case 'l':
+			motionMoveCursor(ARROW_RIGHT, performCount);
+			break;
+		case 'x':
+			motionX(performCount);
+			break;
+		case 'w':
+			motionW(performCount);
+			break;
+		case 'b':
+			motionB(performCount);
+			break;
+	}
+	motionClear();	
+}
+
+void motionClear() {
+	
+	E.motion.countBefore = 1;
+	E.motion.operator = 0;
+	E.motion.countAfter = 1;
+	E.motion.motion = 0;
+}
 
 
 /*** file i/o ***/
@@ -735,18 +858,20 @@ void insertModeHandler(int c) {
 }
 
 void normalModeHandler(int c) {
+	if (isdigit(c)) { 
+		motionAppend(c);
+		return;
+	}
 	switch (c) {
 		case 'h':
-			editorMoveCursor(ARROW_LEFT);
-			break;
 		case 'j':
-			editorMoveCursor(ARROW_DOWN);
-			break;
 		case 'k':
-			editorMoveCursor(ARROW_UP);
-			break;
 		case 'l':
-			editorMoveCursor(ARROW_RIGHT);
+		case 'w':
+		case 'b':
+		case 'x':
+		case 'd':
+			motionAppend(c);
 			break;
 		case 'i':
 			E.mode = MODE_INSERT;
@@ -755,7 +880,8 @@ void normalModeHandler(int c) {
 			E.mode = MODE_INSERT;
 			editorMoveCursor(ARROW_RIGHT);
 			break;
-		
+		case '\x1b':
+			motionClear();
 	}
 }
 /*** init ***/
@@ -773,6 +899,7 @@ void initEditor() {
 	E.filename = NULL;
 	E.statusmsg[0] = '\0';
 	E.statusmsg_time = 0;
+	motionClear();
 
 	if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 	E.screenrows -= 2;
