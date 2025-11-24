@@ -49,6 +49,13 @@ enum editorMode {
 /*** data ***/
 
 typedef struct {
+	int bx;
+	int by;
+	int ax;
+	int ay;
+} motionCoords;
+
+typedef struct {
 	int countBefore;
 	int operator;
 	int countAfter;
@@ -93,6 +100,7 @@ bool isSeparator(int c);
 void editorMoveCursor(int key);
 void motionPerform();
 void motionClear();
+void operatorD(motionCoords coords);
 
 
 /*** terminal ***/
@@ -349,31 +357,21 @@ void editorDelChar() {
 
 /*** word operations ***/
 
-int lengthToNextWord(){
-	bool wordFound = false;
-	int counter = 0;
-	while (true){
-		counter++;
-		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && !wordFound) wordFound = true;
-		if (isSeparator(E.row[E.cy].chars[E.cx + counter]) && wordFound) break;
-		
+bool isSSeparator(int c) {
+	if (strchr(".!?", c) != NULL) {
+		return true;
 	}
-	return counter;
-}
+	return false;
+}	
 
-int lengthToPrevWord(){
-	bool wordFound = false;
-	int counter = 0;
-	while (true){
-		counter++;
-		if (isSeparator(E.row[E.cy].chars[E.cx - counter]) && !wordFound) wordFound = true;
-		if (isSeparator(E.row[E.cy].chars[E.cx - counter]) && wordFound) break;
-		
+bool isLetter(int c) {
+	if (strchr("qwertyuiopasdfghjklzxcvbnm", c) != NULL) {
+	       return true;
 	}
-	return counter;
-}
+	return false;
+}	
 
-bool isSeparator(int c) {
+bool isWSeparator(int c) {
 	if (strchr(" \t\n.,;:()[]{}!?-<>\"'", c) != NULL) {
 		return true;
 	}
@@ -398,17 +396,17 @@ bool isOperator(int c) {
 
 void motionAppend(int c) {
 	if (isdigit(c)) {
-		if (E.motion.operator != 0) {
+		if (E.motion.operator == 0) {
 			E.motion.countBefore *= 10;
 			E.motion.countBefore += c;
 		}
-		if (E.motion.operator == 0) {
+		if (E.motion.operator != 0) {
 			E.motion.countAfter *= 10;
 			E.motion.countAfter += c;
 		}
 	}
 
-	if (isOperator(c))  {
+	if (E.motion.operator == 0 && isOperator(c))  {
 		E.motion.operator = c;
 	}
 	
@@ -418,11 +416,71 @@ void motionAppend(int c) {
 	}
 }
 
-void motionMoveCursor(int direction, int count) {
-	for (int i = 0; i<count; i++) {
-		editorMoveCursor(direction);
-	}
+motionCoords setDefaultCoords() {
+	motionCoords result;
+	result.bx = E.cx;
+	result.by = E.cy;
+	result.ax = E.cx;
+	result.ay = E.cy;
+	return result;
 }
+
+motionCoords motionH(int count) {
+	motionCoords result = setDefaultCoords();
+	
+	while (count > 0) {
+		if (result.ax != 0) {
+			result.ax--;
+		} else if (result.ay > 0) {
+			result.ay--;
+			result.ax = E.row[result.ay].size;
+		}
+		count--;
+	}
+	return result;
+}
+motionCoords motionJ(int count) {
+	motionCoords result = setDefaultCoords();
+
+	while (count > 0) {
+		if (result.ay != E.screenrows - 1) {
+			result.ay--;
+		}
+		count--;
+	}
+
+	return result;
+}
+
+motionCoords motionK(int count) {
+	motionCoords result = setDefaultCoords();
+
+	while (count > 0) {
+		if (result.ay != E.numrows) {
+		result.ay++;
+		}
+		count--;
+	}
+	return result;
+}
+
+motionCoords motionL(int count) {
+	motionCoords result = setDefaultCoords();
+	erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
+	while (count > 0) {
+		if (row && result.ax < row->size) {
+			result.ax++;
+		} else if (row&& result.ax == row->size) {
+			result.ay++;
+			result.ax = 0;
+		}
+		count--;
+	}
+	return result;
+
+}
+
 
 void motionX(int count) {
 	for (int i = 0; i<count; i++) {
@@ -431,59 +489,193 @@ void motionX(int count) {
 	}
 }
 
-void motionW(int count) {
-	int len;
-	for (int i = 0; i<count; i++) {
-		len = lengthToNextWord();
-		for (int i = 0; i<len; i++) {
-			editorMoveCursor(ARROW_RIGHT);
+motionCoords motionW(int count) {
+	erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+	motionCoords result = setDefaultCoords();
+	bool wordFound = false;
+
+	for (int i = 0; i<count;) {
+		
+		if (row && result.ax < row->size) {
+			result.ax++;
+		} else if (row&& result.ax == row->size) {
+			result.ay++;
+			result.ax = 0;
+		}
+
+		row = (result.ay >= E.numrows) ? NULL : &E.row[result.ay];
+		int rowlen = row ? row->size : 0;
+		if (result.ax > rowlen) {
+			result.ax = rowlen;
+			return result;
+		}
+
+
+		if (isLetter(E.row[result.ay].chars[result.ax])) wordFound = true;
+		if (isWSeparator(E.row[result.ay].chars[result.ax]) && wordFound) {
+			wordFound = false;
+			i++;
 		}
 	}
+	return result;
 }
 
 
-void motionB(int count) {
-	int len;
-	for (int i = 0; i<count; i++) {
-		len = lengthToPrevWord();
-		for (int i = 0; i<len; i++) {
-			editorMoveCursor(ARROW_LEFT);
+motionCoords motionB(int count) {
+	erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+	motionCoords result = setDefaultCoords();
+	bool wordFound = false;
+
+	for (int i = 0; i<count;) {
+
+
+		if (result.ax != 0) {
+			result.ax--;
+		} else if (result.ay > 0) {
+			result.ay--;
+			result.ax = E.row[result.ay].size;
+		}
+		row = (result.ay >= E.numrows) ? NULL : &E.row[result.ay];
+		int rowlen = row ? row->size : 0;
+		if (result.ax > rowlen) {
+			result.ax = rowlen;
+			return result;
+		}
+
+		if (isLetter(E.row[result.ay].chars[result.ax])) wordFound = true;
+		if (isWSeparator(E.row[result.ay].chars[result.ax]) && wordFound) {
+			wordFound = false;
+			i++;
 		}
 	}
+	return result;
 }
 
+motionCoords motionS(int count) {
+	erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+	motionCoords result = setDefaultCoords();
+	bool wordFound = false;
+
+	for (int i = 0; i<count;) {
+		
+		if (row && result.ax < row->size) {
+			result.ax++;
+		} else if (row&& result.ax == row->size) {
+			result.ay++;
+			result.ax = 0;
+		}
+
+		row = (result.ay >= E.numrows) ? NULL : &E.row[result.ay];
+		int rowlen = row ? row->size : 0;
+		if (result.ax > rowlen) {
+			result.ax = rowlen;
+			return result;
+		}
 
 
+		if (isSSeparator(E.row[result.ay].chars[result.ax]) && wordFound) {
+			wordFound = false;
+			i++;
+		}
+	}
+	return result;
+}
+
+motionCoords motionN(int count) {
+	erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+	motionCoords result = setDefaultCoords();
+	bool wordFound = false;
+
+	for (int i = 0; i<count;) {
 
 
+		if (result.ax != 0) {
+			result.ax--;
+		} else if (result.ay > 0) {
+			result.ay--;
+			result.ax = E.row[result.ay].size;
+		}
+		row = (result.ay >= E.numrows) ? NULL : &E.row[result.ay];
+		int rowlen = row ? row->size : 0;
+		if (result.ax > rowlen) {
+			result.ax = rowlen;
+			return result;
+		}
+
+		if (isLetter(E.row[result.ay].chars[result.ax])) wordFound = true;
+		if (isSSeparator(E.row[result.ay].chars[result.ax]) && wordFound) {
+			wordFound = false;
+			i++;
+		}
+	}
+	return result;
+
+}
 
 void motionPerform() {
+	motionCoords coords;
 	int performCount = E.motion.countBefore * E.motion.countAfter;
-	
+
 	switch (E.motion.motion) {
 		case 'h':
-			motionMoveCursor(ARROW_LEFT, performCount);
+			coords = motionH(performCount);
 			break;
 		case 'j':
-			motionMoveCursor(ARROW_DOWN, performCount);
+			coords = motionJ(performCount);
 			break;
 		case 'k':
-			motionMoveCursor(ARROW_UP, performCount);
+			coords = motionK(performCount);
 			break;
 		case 'l':
-			motionMoveCursor(ARROW_RIGHT, performCount);
-			break;
-		case 'x':
-			motionX(performCount);
+			coords = motionL(performCount);
 			break;
 		case 'w':
-			motionW(performCount);
+			coords = motionW(performCount);
 			break;
 		case 'b':
-			motionB(performCount);
+			coords = motionB(performCount);
+			break;
+		case 's':
+			coords = motionS(performCount);
+			break;
+		case 'n':
+			coords = motionN(performCount);
+			break;
+		default:
+			break;
+		}
+	switch (E.motion.operator) {
+		case 'd':
+			operatorD(coords);
+			break;
+		default:
+			E.cx = coords.ax;
+			E.cy = coords.ay;
 			break;
 	}
-	motionClear();	
+	motionClear();
+}
+
+void operatorD(motionCoords coords) {
+	int ex;
+	int ey;
+
+	if (coords.ay > coords.by) {
+		ex = coords.ax;
+		ey = coords.ay;
+		E.cx = coords.bx;
+		E.cy = coords.by;
+	} else {
+		ex = coords.bx;
+		ey = coords.by;
+		E.cx = coords.ax;
+		E.cy = coords.ay;
+	}
+
+	while (E.cx != ex && E.cy != ey) {
+		editorDelChar();
+		if (E.cx == 0 && E.cy == 0) return;
+	}
 }
 
 void motionClear() {
@@ -858,21 +1050,11 @@ void insertModeHandler(int c) {
 }
 
 void normalModeHandler(int c) {
-	if (isdigit(c)) { 
+	if (isdigit(c) | isMotion(c) | isOperator(c)) { 
 		motionAppend(c);
 		return;
 	}
 	switch (c) {
-		case 'h':
-		case 'j':
-		case 'k':
-		case 'l':
-		case 'w':
-		case 'b':
-		case 'x':
-		case 'd':
-			motionAppend(c);
-			break;
 		case 'i':
 			E.mode = MODE_INSERT;
 			break;
