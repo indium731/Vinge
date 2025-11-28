@@ -101,7 +101,7 @@ void editorMoveCursor(int key);
 void motionPerform();
 void motionClear();
 void operatorD(motionCoords coords);
-
+void commandModeHandler();
 
 /*** terminal ***/
 
@@ -439,11 +439,11 @@ motionCoords motionH(int count) {
 	}
 	return result;
 }
-motionCoords motionJ(int count) {
+motionCoords motionK(int count) {
 	motionCoords result = setDefaultCoords();
 
 	while (count > 0) {
-		if (result.ay != E.screenrows - 1) {
+		if (result.ay != 0) {
 			result.ay--;
 		}
 		count--;
@@ -452,7 +452,7 @@ motionCoords motionJ(int count) {
 	return result;
 }
 
-motionCoords motionK(int count) {
+motionCoords motionJ(int count) {
 	motionCoords result = setDefaultCoords();
 
 	while (count > 0) {
@@ -507,7 +507,7 @@ motionCoords motionW(int count) {
 		int rowlen = row ? row->size : 0;
 		if (result.ax > rowlen) {
 			result.ax = rowlen;
-			return result;
+			break;
 		}
 
 
@@ -660,7 +660,7 @@ void operatorD(motionCoords coords) {
 	int ex;
 	int ey;
 
-	if (coords.ay > coords.by) {
+	if (coords.ay < coords.by) {
 		ex = coords.ax;
 		ey = coords.ay;
 		E.cx = coords.bx;
@@ -672,7 +672,7 @@ void operatorD(motionCoords coords) {
 		E.cy = coords.ay;
 	}
 
-	while (E.cx != ex && E.cy != ey) {
+	while ((E.cx != ex) | (E.cy != ey)) {
 		editorDelChar();
 		if (E.cx == 0 && E.cy == 0) return;
 	}
@@ -949,7 +949,7 @@ void editorMoveCursor(int key) {
 			}
 			break;
 		case ARROW_UP:
-			if (E.cy != E.screenrows - 1) {
+			if (E.cy != 0) {
 				E.cy--;
 			}
 			break;
@@ -1064,8 +1064,30 @@ void normalModeHandler(int c) {
 			break;
 		case '\x1b':
 			motionClear();
+			break;
+		case ':':
+			commandModeHandler();
+			break;
 	}
 }
+
+void commandModeHandler() {
+	
+	char *input = editorPrompt("%s");
+	if (input == NULL) {
+		editorSetStatusMessage("");
+		return;
+		}
+	if (strchr(input, 'w') != NULL) editorSave();
+	if (strchr(input, 'q') != NULL) {
+		write(STDOUT_FILENO, "\x1b[2J", 4);
+		write(STDOUT_FILENO, "\x1b[H", 3);
+		exit(0);
+	}
+
+
+}
+
 /*** init ***/
 
 void initEditor() {
@@ -1094,8 +1116,6 @@ int main(int argc, char *argv[]) {
 	if (argc >= 2) {
 		editorOpen(argv[1]);
 	}
-
-	editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit");
 
 	while (1) {
 		editorRefreshScreen();
