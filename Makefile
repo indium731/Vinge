@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pedantic -std=c99
 SRC = src/main.c
-TARGET = vinge
+TARGET = .build/vinge
 
 all: $(TARGET)
 
